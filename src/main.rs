@@ -1,25 +1,17 @@
-use std::{fmt::Debug, sync::Arc, time::Instant};
+use std::{fmt::Debug, time::Instant};
 
-use cached::proc_macro::cached;
-
-use defaultmap::DefaultHashMap;
 use itertools::Itertools;
-use pathfinding::prelude::dfs;
 
-#[derive(Default, PartialEq, Eq, Hash, Clone)]
+#[derive(Default, PartialEq, Eq, Hash, Clone, Copy)]
 struct LetterSet {
-    set: [bool; 26],
+    set: u32,
 }
 
 impl LetterSet {
-    fn pop(&mut self) -> Option<char> {
-        for (letter, val) in ('a'..='z').zip(self.set.iter_mut()) {
-            if *val {
-                *val = false;
-                return Some(letter);
-            }
+    fn add(self, other: Self) -> Self {
+        Self {
+            set: self.set | other.set,
         }
-        None
     }
 }
 
@@ -29,27 +21,27 @@ impl FromIterator<char> for LetterSet {
         for letter in iter {
             assert!(('a'..='z').contains(&letter));
             let i = (letter as usize) - ('a' as usize);
-            result.set[i] = true;
+            result.set |= 1 << i;
         }
         result
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Word {
-    word: [char; 5],
+    word: [u8; 5],
 }
 
 impl Word {
     fn new(c: &str) -> Word {
-        let word = c.chars().collect_vec();
+        let word = c.chars().map(|x| x as _).collect_vec();
         Self {
             word: word.try_into().unwrap(),
         }
     }
 
     fn chars(&self) -> impl Iterator<Item = char> + '_ {
-        self.word.iter().copied()
+        self.word.iter().copied().map(|x| x as _)
     }
 }
 
@@ -60,8 +52,8 @@ impl Debug for Word {
     }
 }
 
-#[cached]
 fn words() -> Vec<Word> {
+    let start = Instant::now();
     let mut w = include_str!("words.txt")
         .lines()
         .filter(|x| x.chars().all_unique())
@@ -69,58 +61,72 @@ fn words() -> Vec<Word> {
         .map(Word::new)
         .collect_vec();
 
-    let mut letter_frequency = DefaultHashMap::new(0);
+    let mut letter_frequency = vec![0; 128];
     for word in &w {
         for letter in word.chars() {
-            letter_frequency[letter] += 1;
+            letter_frequency[letter as usize] += 1;
         }
     }
 
-    w.sort_unstable_by_key(|x| x.chars().map(|c| letter_frequency[c]).sum::<i32>());
+    dbg!(&letter_frequency.iter().max().unwrap());
+
+    w.sort_unstable_by_key(|x| x.chars().map(|c| letter_frequency[c as usize]).sum::<i32>());
+
+    dbg!(&start.elapsed());
 
     w
 }
 
-#[cached]
-fn words_without(letters: LetterSet) -> Arc<Vec<Word>> {
-    let mut letters = letters;
-    if let Some(letter) = letters.pop() {
-        Arc::new(
-            words_without(letters)
-                .iter()
-                .filter(|x| !x.word.contains(&letter))
-                .copied()
-                .collect(),
-        )
-    } else {
-        Arc::new(words())
+fn word_contains(word: Word, letters: LetterSet) -> bool {
+    for c in word.chars() {
+        for (i, letter) in ('a'..='z').enumerate() {
+            if letter == c && letters.set & (1 << i) != 0 {
+                return true;
+            }
+        }
     }
+
+    false
+}
+
+fn words_without_from(words: &[Word], letters: LetterSet) -> Vec<Word> {
+    words
+        .iter()
+        .filter(|&&x| !word_contains(x, letters))
+        .copied()
+        .collect()
+}
+
+fn search(
+    words: &mut Vec<Word>,
+    available_words: &Vec<Word>,
+    avoid_letters: LetterSet,
+) -> Option<Vec<Word>> {
+    if words.len() == 5 {
+        return Some(words.clone());
+    }
+
+    for &word in available_words {
+        words.push(word);
+
+        let avoid_next = word.chars().collect();
+        let avoid_letters = avoid_letters.add(avoid_next);
+
+        let available_words = words_without_from(available_words, avoid_letters);
+        if let Some(word) = search(words, &available_words, avoid_letters) {
+            return Some(word);
+        }
+
+        words.pop();
+    }
+    None
 }
 
 fn main() {
     let start = Instant::now();
-    let x = dfs(
-        vec![],
-        |words: &Vec<Word>| {
-            let previous_letters = words.iter().flat_map(|x| x.chars());
-            words_without(previous_letters.collect())
-                .iter()
-                .filter(|x| {
-                    if let Some(prev) = words.last() {
-                        *x > prev
-                    } else {
-                        true
-                    }
-                })
-                .map(|&x| {
-                    let mut words = words.clone();
-                    words.push(x);
-                    words
-                })
-                .collect_vec()
-        },
-        |words| words.len() == 5,
-    );
+
+    let mut w = vec![];
+    let x = search(&mut w, &words(), LetterSet::default());
     dbg!(&x);
     dbg!(start.elapsed());
 }

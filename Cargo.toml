@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cached = "0.38.0"
-defaultmap = "0.5.0"
 itertools = "0.10.3"
-pathfinding = "3.0.13"
+
+[profile.release]
+debug = true
