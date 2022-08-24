@@ -1,6 +1,6 @@
 ## Finding a set of 5 5-letter words containing 25 unique letters.
 
-Somewhat optimized implementation. Total runtime: **49ms**
+Somewhat optimized implementation. Total runtime: **3.4ms**
 
 Inspired by:
 - https://www.youtube.com/watch?v=_-AfhLQfb6w
